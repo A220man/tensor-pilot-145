@@ -1,0 +1,1 @@
+fastapi>=0.104.0\nuvicorn>=0.24.0\npydantic>=2.5.0\npython-multipart>=0.0.8\n\n# Testing\npytest>=7.4.3\nhttpx>=0.25.0\npytest-asyncio>=0.21.0
