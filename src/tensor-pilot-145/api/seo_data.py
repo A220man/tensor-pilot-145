@@ -1,1 +1,103 @@
-\"\"\"\nSEO Data API Module for Tensor-Pilot-145\n\nThis module provides API endpoints for SEO data retrieval and analysis,\nincluding keyword research, SERP data fetching, and search volume analysis.\n\"\"\"\n\nfrom fastapi import APIRouter, HTTPException, Depends, BackgroundTasks\nfrom pydantic import BaseModel, Field\nfrom typing import List, Optional, Dict, Any\nfrom datetime import datetime, timedelta\nimport json\nimport os\nimport logging\n\nrouter = APIRouter(prefix=\"/api/seo\", tags=[\"SEO Data\"])\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger(__name__)\n\nclass CacheEntry:\n    \"\"\"Cache entry with expiration time.\"\"\"\n    def __init__(self, data: Any, ttl_seconds: int = 300):\n        self.data = data\n        self.expires_at = datetime.now() + timedelta(seconds=ttl_seconds)\n\n    def is_expired(self) -> bool:\n        return datetime.now() > self.expires_at\n\nclass KeywordRequest(BaseModel):\n    \"\"\"Request model for keyword analysis.\"\"\"\n    keyword: str = Field(..., description=\"Target keyword for analysis\")\n    location: Optional[str] = Field(default=\"US\", description=\"Location code (e.g., US, GB, CA)\")\n    language: Optional[str] = Field(default=\"en\", description=\"Language code (e.g., en, es, fr)\")\n    limit: Optional[int] = Field(default=10, ge=1, le=100, description=\"Number of results to return\")\n\nclass SerpResult(BaseModel):\n    \"\"\"SERP result model.\"\"\"\n    title: str\n    url: str\n    snippet: str\n    position: int\n    domain_authority: Optional[int] = None\n    page_rank: Optional[int] = None\n\nclass KeywordAnalysis(BaseModel):\n    \"\"\"Keyword analysis result.\"\"\"\n    keyword: str\n    search_volume: int\n    difficulty_score: int\n    cpc: float\n    serp_results: List[SerpResult]\n    timestamp: datetime\n    cache_key: str\n\n# Simple in-memory cache\n_cache: Dict[str, CacheEntry] = {}\n\n@router.post(\"/keyword/analyze\", response_model=KeywordAnalysis)\nasync def analyze_keyword(request: KeywordRequest):\n    \"\"\"\n    Analyze a keyword and fetch SERP data.\n    \n    Provides comprehensive keyword analysis including search volume,\n    difficulty score, CPC, and SERP results.\n    \"\"\"\n    try:\n        cache_key = f\"{request.keyword}:{request.location}:{request.language}\"\n        \n        # Check cache first\n        if cache_key in _cache:\n            cache_entry = _cache[cache_key]\n            if not cache_entry.is_expired():\n                logger.info(f\"Returning cached data for keyword: {request.keyword}\")\n                return KeywordAnalysis(**cache_entry.data)\n            else:\n                # Remove expired cache entry\n                del _cache[cache_key]\n        \n        # Simulate API calls to SEO data providers\n        search_volume = _get_search_volume(request.keyword)\n        difficulty_score = _get_difficulty_score(request.keyword)\n        cpc = _get_cpc(request.keyword)\n        \n        # Fetch SERP results\n        serp_results = await _fetch_serp_results(request.keyword, request.limit)\n        \n        analysis_result = KeywordAnalysis(\n            keyword=request.keyword,\n            search_volume=search_volume,\n            difficulty_score=difficulty_score,\n            cpc=cpc,\n            serp_results=serp_results,\n            timestamp=datetime.now(),\n            cache_key=cache_key\n        )\n        \n        # Cache the result\n        _cache[cache_key] = CacheEntry(analysis_result.dict(), ttl_seconds=300)\n        \n        logger.info(f\"Generated new analysis for keyword: {request.keyword}\")\n        return analysis_result\n        \n    except Exception as e:\n        logger.error(f\"Error analyzing keyword: {str(e)}\")\n        raise HTTPException(status_code=500, detail=f\"Error analyzing keyword: {str(e)}\")\n\n@router.get(\"/keyword/{keyword}\")\nasync def get_keyword_analysis(keyword: str, location: str = \"US\", language: str = \"en\"):\n    \"\"\"Get cached keyword analysis if available.\"\"\"\n    cache_key = f\"{keyword}:{location}:{language}\"\n    \n    if cache_key in _cache:\n        cache_entry = _cache[cache_key]\n        if not cache_entry.is_expired():\n            return cache_entry.data\n    \n    raise HTTPException(status_code=404, detail=\"Keyword analysis not found\")\n\n@router.delete(\"/cache/{cache_key}\")\nasync def clear_cache_entry(cache_key: str):\n    \"\"\"Clear specific cache entry.\"\"\"\n    if cache_key in _cache:\n        del _cache[cache_key]\n        return {\"message\": f\"Cache entry {cache_key} cleared\"}\n    raise HTTPException(status_code=404, detail=\"Cache key not found\")\n\n@router.get(\"/cache/stats\")\nasync def get_cache_stats():\n    \"\"\"Get cache statistics.\"\"\"\n    active_entries = sum(1 for entry in _cache.values() if not entry.is_expired())\n    expired_entries = len(_cache) - active_entries\n    \n    return {\n        \"total_entries\": len(_cache),\n        \"active_entries\": active_entries,\n        \"expired_entries\": expired_entries,\n        \"cache_size_kb\": len(json.dumps([e.data for e in _cache.values()])) / 1024\n    }\n\n# Mock data providers (replace with real API calls)\nasync def _fetch_serp_results(keyword: str, limit: int) -> List[SerpResult]:\n    \"\"\"Fetch SERP results for a keyword.\"\"\"\n    # Simulate SERP fetching\n    results = []\n    for i in range(1, limit + 1):\n        result = SerpResult(\n            title=f\"Top Result {i}: {keyword}\",\n            url=f\"https://example.com/result-{i}\",\n            snippet=f\"This is a high-quality snippet for {keyword} with relevant information.\",\n            position=i,\n            domain_authority=85 - (i * 3),  # Simulated DA scores\n            page_rank=4 - (i // 3) if i <= 9 else 1  # Simplified PR\n        )\n        results.append(result)\n    \n    return results\n\ndef _get_search_volume(keyword: str) -> int:\n    \"\"\"Get search volume for keyword (mock implementation).\"\"\"\n    base_volume = len(keyword) * 100\n    # Add some randomness based on keyword characteristics\n    return base_volume + (hash(keyword) % 1000)\n\ndef _get_difficulty_score(keyword: str) -> int:\n    \"\"\"Get difficulty score for keyword (mock implementation).\"\"\"\n    base_difficulty = 50\n    # More complex keywords get higher difficulty\n    word_count_factor = min(len(keyword.split()) * 5, 30)\n    return min(base_difficulty + word_count_factor + (hash(keyword) % 30), 100)\n\ndef _get_cpc(keyword: str) -> float:\n    \"\"\"Get CPC for keyword (mock implementation).\"\"\"\n    base_cpc = 0.1\n    return round(base_cpc + (hash(keyword) % 100) / 100, 2)\n\n# Background task for cleanup\n@router.post(\"/cleanup\")\nasync def cleanup_expired_cache_entries(background_tasks: BackgroundTasks):\n    \"\"\"Clean up expired cache entries.\"\"\"\n    async def cleanup():\n        expired_keys = []\n        for key, entry in _cache.items():\n            if entry.is_expired():\n                expired_keys.append(key)\n        \n        for key in expired_keys:\n            del _cache[key]\n        \n        logger.info(f\"Cleaned up {len(expired_keys)} expired cache entries\")\n    \n    background_tasks.add_task(cleanup)\n    return {\"message\": \"Cleanup task scheduled\"}\n\n@router.get(\"/health\")\nasync def health_check():\n    \"\"\"Health check endpoint.\"\"\"\n    active_entries = sum(1 for entry in _cache.values() if not entry.is_expired())\n    \n    return {\n        \"status\": \"healthy\",\n       �็ฃ\n        \"cache_entries\": len(_cache),\n        \"active_entries\": active_entries,\n        \"timestamp\": datetime.now().isoformat()\n    }
+"""
+SEO Data API Module for Tensor-Pilot-145
+
+This module provides API endpoints for SEO data retrieval and analysis,
+including keyword research, SERP data fetching, and search volume analysis.
+"""
+
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
+import json
+import os
+import logging
+
+router = APIRouter(prefix=\"/api/seo\", tags=[\"SEO Data\"])
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class CacheEntry:
+    \"\"\"Cache entry with expiration time.\"\"\"
+    def __init__(self, data: Any, ttl_seconds: int = 300):
+        self.data = data
+        self.expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
+
+    def is_expired(self) -> bool:
+        return datetime.now() > self.expires_at
+
+# In-memory cache for keyword analysis results
+_cache: Dict[str, CacheEntry] = {}
+
+def cleanup_expired_cache():
+    \"\"\"Remove expired entries from the cache.\"\"\"
+    expired_keys = [k for k, v in _cache.items() if v.is_expired()]
+    for k in expired_keys:
+        del _cache[k]
+        logger.info(f\"Cache entry {keyword} expired and cleaned up.\")
+
+@router.post(\"/keyword/analyze\")
+async def analyze_keyword(request: Dict[str, Any], background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    \"\"\"Analyze keyword and fetch SERP data.\"\"\"
+    keyword = request.get(\"keyword\")
+    if not keyword:
+        raise HTTPException(status_code=400, detail=\"\"keyword\" is required\")
+
+    # For simulation, use static data based on keyword
+    simulated_data = {
+        \"keyword\": keyword,
+        \"search_volume\": 1000,
+        \"difficulty_score\": 50,
+        \"cpc\": 0.5,
+        \"serp_results\": [
+            {\"title\": f\"Result for {keyword} 1\", \"url\": \"https://example.com/result1\"},
+            {\"title\": f\"Result for {keyword} 2\", \"url\": \"https://example.com/result2\"},
+        ],
+        \"timestamp\": datetime.now().isoformat(),
+        \"cache_key\": keyword,
+    }
+
+    # Store in cache
+    _cache[keyword] = CacheEntry(simulated_data, ttl_seconds=300)
+    background_tasks.add_task(cleanup_expired_cache)
+
+    logger.info(f\"Keyword analysis for {keyword} stored in cache.\")
+    return simulated_data
+
+@router.get(\"/keyword/{keyword}\")
+async def get_cached_keyword(keyword: str) -> Dict[str, Any]:
+    \"\"\"Get cached keyword analysis.\"\"\"
+    entry = _cache.get(keyword)
+    if not entry:
+        raise HTTPException(status_code=404, detail=f\"Keyword {keyword} not found in cache\")
+    if entry.is_expired():
+        del _cache[keyword]
+        raise HTTPException(status_code=404, detail=f\"Cache entry for {keyword} has expired\")
+
+    return entry.data
+
+@router.get(\"/cache/stats\")
+async def get_cache_stats() -> Dict[str, Any]:
+    \"\"\"Get cache statistics.\"\"\"
+    cleanup_expired_cache()
+    return {
+        \"active_entries\": len(_cache),
+        \"cache_keys\": list(_cache.keys()),
+    }
+
+@router.get(\"/health\")
+async def health_check() -> Dict[str, str]:
+    \"\"\"Health check endpoint.\"\"\"
+    return {\"status\": \"healthy\", \"version\": \"1.0.0\"}
+
+@router.get(\"/ready\")
+async def readiness_check() -> Dict[str, Any]:
+    \"\"\"Readiness check endpoint.\"\"\"
+    return {
+        \"status\": \"ready\",
+        \"capabilities\": [\"keyword_analysis\", \"serp_fetching\", \"caching\"],
+        \"timestamp\": datetime.now().isoformat(),
+    }
+
+__all__ = [\"router\", \"_cache\", \"CacheEntry\"]
