@@ -1,6 +1,6 @@
 # Tensor-Pilot-145 — Ryan Vo
 
-Current version: `1.1.0`.
+Current version: `1.2.0`.
 
 > Work in progress. This checkpoint may be incomplete or fail tests. See PLAN.md and STATUS.md before use.
 
@@ -127,8 +127,8 @@ print(f"Active Cache Entries: {stats['active_entries']}")
 
 ### Project Structure
 ```
-tensor-pilot-145/
-├── src/tensor-pilot-145/
+tensor_pilot_145/
+├── src/tensor_pilot_145/
 │   └── api/
 │       └── seo_data.py          # Core API implementation
 ├── main.py                      # FastAPI application

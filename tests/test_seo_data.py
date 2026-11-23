@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from src.tensor-pilot-145.api.seo_data import app
+from src.tensor_pilot_145.api.seo_data import app
 
 @pytest.fixture
 def client():
