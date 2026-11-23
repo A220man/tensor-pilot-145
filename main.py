@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
 
-from src.tensor-pilot-145.api.seo_data import router
+from src.tensor_pilot_145.api.seo_data import router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
