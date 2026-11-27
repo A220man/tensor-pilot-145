@@ -45,15 +45,19 @@ async def analyze_keyword(request: Dict[str, Any], background_tasks: BackgroundT
         raise HTTPException(status_code=400, detail="keyword is required")
 
     # For simulation, use static data based on keyword
+    # Respect the limit parameter; default to 10 if not specified
+    limit = request.get("limit", 10)
+    # Build serp_results respecting the limit
+    base_results = [
+        {"title": f"Result for {keyword} {i+1}", "url": f"https://example.com/result{i+1}"}
+        for i in range(limit)
+    ]
     simulated_data = {
         "keyword": keyword,
         "search_volume": 1000,
         "difficulty_score": 50,
         "cpc": 0.5,
-        "serp_results": [
-            {"title": f"Result for {keyword} 1", "url": "https://example.com/result1"},
-            {"title": f"Result for {keyword} 2", "url": "https://example.com/result2"},
-        ],
+        "serp_results": base_results,
         "timestamp": datetime.now().isoformat(),
         "cache_key": keyword,
     }
